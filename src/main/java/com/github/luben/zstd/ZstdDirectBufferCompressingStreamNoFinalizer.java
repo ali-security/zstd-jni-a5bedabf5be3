@@ -57,6 +57,9 @@ public class ZstdDirectBufferCompressingStreamNoFinalizer implements Closeable, 
     private native long endStream(long ctx, ByteBuffer dst, int dstOffset, int dstSize);
 
     public ZstdDirectBufferCompressingStreamNoFinalizer setDict(byte[] dict) {
+        if (closed) {
+            throw new IllegalStateException("Stream closed");
+        }
         if (initialized) {
             throw new IllegalStateException("Change of parameter on initialized stream");
         }
@@ -66,6 +69,9 @@ public class ZstdDirectBufferCompressingStreamNoFinalizer implements Closeable, 
     }
 
     public ZstdDirectBufferCompressingStreamNoFinalizer setDict(ZstdDictCompress dict) {
+        if (closed) {
+            throw new IllegalStateException("Stream closed");
+        }
         if (initialized) {
             throw new IllegalStateException("Change of parameter on initialized stream");
         }

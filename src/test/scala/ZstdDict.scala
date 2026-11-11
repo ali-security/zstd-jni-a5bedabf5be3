@@ -383,4 +383,59 @@ class ZstdDictSpec extends AnyFlatSpec {
       assert(input.toSeq == output.toSeq)
     }
   }
+
+  lazy val streamDict = train(false)
+
+  // The native compression/decompression contexts keep referencing the fast dicts
+  // loaded in them, so a dict must stay locked (it can not be closed and freed)
+  // while a context uses it.
+
+  "ZstdDirectBufferCompressingStreamNoFinalizer" should "not keep the fast dict locked when set on a closed stream" in {
+    val zos = new ZstdDirectBufferCompressingStreamNoFinalizer(ByteBuffer.allocateDirect(100), 1)
+    zos.close()
+    val cdict = new ZstdDictCompress(streamDict, 1)
+    intercept[IllegalStateException] {
+      zos.setDict(cdict)
+    }
+    // the dict is not retained by the closed stream
+    cdict.close
+  }
+
+  def newBufferDecompressingStream(direct: Boolean, compressed: Array[Byte]): BaseZstdBufferDecompressingStreamNoFinalizer =
+    if (direct) {
+      val source = ByteBuffer.allocateDirect(compressed.length)
+      source.put(compressed)
+      source.flip()
+      new ZstdDirectBufferDecompressingStreamNoFinalizer(source)
+    } else {
+      new ZstdBufferDecompressingStreamNoFinalizer(ByteBuffer.wrap(compressed))
+    }
+
+  def newTargetBuffer(direct: Boolean, size: Int): ByteBuffer =
+    if (direct) ByteBuffer.allocateDirect(size) else ByteBuffer.allocate(size)
+
+  for (direct <- List(true, false)) {
+    val streamName =
+      if (direct) "ZstdDirectBufferDecompressingStreamNoFinalizer"
+      else "ZstdBufferDecompressingStreamNoFinalizer"
+
+    streamName should "throw on setting parameters on closed stream" in {
+      val compressed = Zstd.compressUsingDict(input, streamDict, 1)
+      val zis = newBufferDecompressingStream(direct, compressed)
+      zis.close
+      assert(!zis.hasRemaining)
+      intercept[IOException] {
+        zis.setLongMax(20)
+      }
+      intercept[IOException] {
+        zis.setDict(streamDict)
+      }
+      val ddict = new ZstdDictDecompress(streamDict)
+      intercept[IOException] {
+        zis.setDict(ddict)
+      }
+      // the dict is not retained by the closed stream
+      ddict.close
+    }
+  }
 }
